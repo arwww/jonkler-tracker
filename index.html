@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jonkler-Auto – Möhringen (mit Offline-Fallback)</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .app { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: auto 1fr; height: 100%; }
+    header { position: sticky; top: 0; z-index: 1000; grid-column: 1 / -1; padding: 10px 14px; border-bottom: 1px solid #e5e5e5; background:#fff; display: grid; gap: 8px; }
+    .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    h1 { font-size: 18px; margin: 0; }
+    #map { height: 100%; }
+    aside { border-left: 1px solid #e5e5e5; padding: 12px; overflow: auto; background: #fafafa; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button { border: 1px solid #ccc; background: #fff; border-radius: 10px; padding: 10px 12px; cursor: pointer; font-weight: 600; }
+    .btn-primary-big {
+      background: #e53935; color: #fff; border-color: #c62828;
+      padding: 12px 16px; font-size: 16px; border-radius: 12px;
+      box-shadow: 0 2px 0 rgba(0,0,0,.06);
+    }
+    .btn-primary-big:active { transform: translateY(1px); }
+    .btn-secondary { background:#0b5; color:#fff; border-color:#0a4; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .badge { display:inline-block; background:#eef; color:#334; border:1px solid #ccd; padding:2px 6px; border-radius:8px; font-size:12px; }
+    .sightings { display: grid; gap: 8px; margin-top: 10px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; background: #fff; padding: 8px 10px; box-shadow: 0 1px 0 rgba(0,0,0,.03); }
+    .card h3 { margin: 0 0 4px 0; font-size: 14px; }
+    .meta { color: #666; font-size: 12px; }
+    .empty { color: #777; font-size: 14px; margin-top: 6px; }
+    .pulse { width: 14px; height: 14px; background: #1e90ff; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 rgba(30,144,255,.7); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(30,144,255,.7)} 70%{box-shadow:0 0 0 18px rgba(30,144,255,0)} 100%{box-shadow:0 0 0 0 rgba(30,144,255,0)} }
+    .toggle { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+    .input { padding:8px 10px; border:1px solid #ccc; border-radius:8px; }
+    .share { font-size: 12px; background:#fff; border:1px dashed #ccc; padding:6px 8px; border-radius:8px; }
+    .hint { font-size: 12px; color:#555; }
+    @media (max-width: 900px) { .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; } aside { grid-row: 3; border-left: none; border-top: 1px solid #e5e5e5; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="top">
+        <h1>Jonkler-Auto – Möhringen</h1>
+        <span id="mode" class="badge">Modus: …</span>
+      </div>
+      <div class="controls">
+        <button id="btnFound" class="btn-primary-big">🎯 Fund markieren</button>
+        <button id="btnNew" class="btn-secondary">Neuer Standort</button>
+        <label class="toggle"><input type="checkbox" id="autoMove" /> Auto-Move</label>
+        <button id="btnExport">CSV exportieren</button>
+        <input id="nickname" class="input" placeholder="Dein Name (optional)" />
+        <button id="copyLink">Room-Link kopieren</button>
+      </div>
+      <div class="share" id="roomInfo"></div>
+      <div class="hint">Teile den Link mit <code>?room=…</code>. Funde erscheinen live (Cloud) oder lokal (Fallback).</div>
+    </header>
+
+    <div id="map"></div>
+
+    <aside>
+      <strong>Funde</strong>
+      <div id="sightings" class="sightings"></div>
+      <div id="empty" class="empty">Noch keine Funde.</div>
+    </aside>
+  </div>
+
+  <!-- App-Script mit Cloud→Offline-Fallback -->
+<script type="module">
+  /***** Firebase statisch importieren (v12.3.0) *****/
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+  import {
+    getFirestore, collection, addDoc, onSnapshot, query, where, orderBy,
+    serverTimestamp, doc, deleteDoc
+  } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+  // --- deine Config ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyBkYMB1XMSTkEkyxTdlZ0BUBgYnIzIVUww",
+    authDomain: "jonkler-auto-tracker.firebaseapp.com",
+    projectId: "jonkler-auto-tracker",
+    storageBucket: "jonkler-auto-tracker.firebasestorage.app",
+    messagingSenderId: "960051126165",
+    appId: "1:960051126165:web:4fc02c0326395e6b75609c",
+  };
+
+  // ------- Helper: UI/Map Objekte aus deiner Seite holen -------
+  const modeBadge = document.getElementById("mode");
+  const btnFound = document.getElementById("btnFound");
+  const btnNew = document.getElementById("btnNew");
+  const btnExport = document.getElementById("btnExport");
+  const chkAuto = document.getElementById("autoMove");
+  const nickname = document.getElementById("nickname");
+  const elSightings = document.getElementById("sightings");
+  const elEmpty = document.getElementById("empty");
+  const roomInfo = document.getElementById("roomInfo");
+  const copyLinkBtn = document.getElementById("copyLink");
+
+  // Geometrie & Map-Funktionen (identisch zu deiner Version)
+  const CENTER = { lat: 48.727, lng: 9.147 }, RADIUS_M = 1100;
+  function metersPerDeg(lat){ return { lat:111320, lng:Math.cos(lat*Math.PI/180)*111320 }; }
+  function randomPointInCircle(center, radiusM){
+    const u=Math.random(), v=Math.random(), r=radiusM*Math.sqrt(u), t=2*Math.PI*v;
+    const m=metersPerDeg(center.lat);
+    return { lat:center.lat+(r*Math.cos(t))/m.lat, lng:center.lng+(r*Math.sin(t))/m.lng };
+  }
+  function distanceMeters(a,b){
+    const R=6371000,dLat=(a.lat-b.lat)*Math.PI/180,dLng=(a.lng-b.lng)*Math.PI/180,la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180;
+    const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(h));
+  }
+  const fmt = ts => new Date(ts).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"});
+  const to6 = n => Number(n).toFixed(6);
+
+  // Map aus deiner Seite wiederherstellen
+  const map = L.map("map").setView([CENTER.lat, CENTER.lng], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+  L.circle([CENTER.lat, CENTER.lng], { radius:RADIUS_M, fill:false, color:"#888", weight:1, dashArray:"4 6" }).addTo(map);
+  const pulseIcon = L.divIcon({ className: "pulse", iconSize: [14,14] });
+  const redPin = L.icon({
+    iconUrl:'data:image/svg+xml;utf8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><path d="M14 41C14 41 2 26.8 2 17A12 12 0 1 1 26 17C26 26.8 14 41 14 41Z" fill="#e53935"/><circle cx="14" cy="14" r="5.5" fill="#fff"/></svg>`),
+    iconSize:[28,42], iconAnchor:[14,41], popupAnchor:[0,-36]
+  });
+  let current=null, currentMarker=null;
+  function placeNewLocation(){
+    current = { ...randomPointInCircle(CENTER, RADIUS_M), ts: Date.now() };
+    if(currentMarker) currentMarker.setLatLng([current.lat, current.lng]);
+    else currentMarker = L.marker([current.lat, current.lng], { icon: pulseIcon }).addTo(map);
+    currentMarker.bindPopup(`<b>Aktueller Jonkler-Standort</b><br>${fmt(current.ts)}<br>Lat ${to6(current.lat)} • Lng ${to6(current.lng)}`);
+    map.panTo([current.lat, current.lng], { animate:true });
+  }
+  placeNewLocation();
+  const layer = L.layerGroup().addTo(map);
+  const params = new URLSearchParams(location.search);
+  const ROOM = (params.get("room") || "moehringen").toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,30) || "moehringen";
+  const shareUrl = `${location.origin}${location.pathname}?room=${encodeURIComponent(ROOM)}`;
+  document.getElementById("copyLink").onclick = async ()=>{ await navigator.clipboard.writeText(shareUrl); };
+
+  // --------- Cloud + klarer Fehlerhinweis ----------
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Badge vorab
+  function setMode(txt, bg="#e6ffed"){ modeBadge.textContent = `Modus: ${txt}`; modeBadge.style.background = bg; }
+  setMode("Init …","#eef");
+
+  // Live-Listener
+// Live-Listener (ohne where → kein Composite-Index nötig)
+function startListener(){
+  // Wir lesen nur innerhalb von rooms/{ROOM}/sightings und sortieren nach ts
+  const q = query(
+    collection(db, "rooms", ROOM, "sightings"),
+    orderBy("ts", "desc")
+    // optional: limit(200) importieren und hier ergänzen
+  );
+
+  onSnapshot(q, (snap) => {
+    setMode("Cloud");
+    const list = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        // Timestamp robust in ms konvertieren (falls serverTimestamp noch pending ist)
+        ts: data.ts?.toMillis?.() ?? (typeof data.ts === "number" ? data.ts : Date.now())
+      };
+    });
+    render(list);
+  }, (err) => {
+    console.error("Firestore onSnapshot error:", err);
+    alert(
+      `Firestore-Fehler: ${err.code || ""}\n${err.message || ""}\n\n` +
+      "→ Prüfe: Anonymous Auth aktiv, Firestore erstellt, Regeln veröffentlicht, Blocker aus."
+    );
+    setMode("Lokal (Fallback)", "#fff7e6");
+  });
+}
+
+
+  // Render-Funktion
+  function render(rows){
+    layer.clearLayers();
+    elSightings.innerHTML = "";
+    if(!rows || !rows.length){ elEmpty.style.display="block"; return; }
+    elEmpty.style.display="none";
+    for(const s of rows){
+      L.marker([s.lat, s.lng], { icon: redPin })
+        .addTo(layer)
+        .bindPopup(`<b>Fund</b><br>${fmt(s.ts)}<br>von ${s.user||"Gast"}<br>Lat ${to6(s.lat)} • Lng ${to6(s.lng)}`);
+      const card = document.createElement("div");
+      card.className="card";
+      card.innerHTML = `<h3>Fund von ${s.user||"Gast"}</h3><div class="meta">${fmt(s.ts)} • Lat ${to6(s.lat)} • Lng ${to6(s.lng)}</div>`;
+      elSightings.appendChild(card);
+    }
+  }
+
+  // Schreiben (Fund markieren)
+  async function addCloudSighting(point){
+    const u = auth.currentUser;
+    const name = (document.getElementById("nickname").value.trim() || "Gast");
+    await addDoc(collection(db, "rooms", ROOM, "sightings"), {
+      room: ROOM, lat: point.lat, lng: point.lng, ts: serverTimestamp(), user: name, userId: u?u.uid:null
+    });
+  }
+
+  // Events
+  btnNew.onclick = placeNewLocation;
+  btnFound.onclick = async ()=>{
+    const p = { lat: current.lat, lng: current.lng };
+    if(distanceMeters(p, CENTER) > RADIUS_M) return alert("Außerhalb des Möhringen-Gebiets.");
+    try { await addCloudSighting(p); }
+    catch(e){ console.error("Write error:", e); alert(`Schreib-Fehler: ${e.code || ""}\n${e.message || ""}`); }
+  };
+  map.on("click", async ev=>{
+    const p = { lat: ev.latlng.lat, lng: ev.latlng.lng };
+    if(distanceMeters(p, CENTER) > RADIUS_M) return alert("Außerhalb des Möhringen-Gebiets.");
+    try { await addCloudSighting(p); }
+    catch(e){ console.error("Write error:", e); alert(`Schreib-Fehler: ${e.code || ""}\n${e.message || ""}`); }
+  });
+
+  // Auth + Listener starten
+  try {
+    await signInAnonymously(auth);  // erfordert: Auth → Anonyme Anmeldung aktiviert
+    onAuthStateChanged(auth, ()=> startListener());
+  } catch(e){
+    console.error("Anonymous auth error:", e);
+    alert(`Auth-Fehler: ${e.code || ""}\n${e.message || ""}\n\n→ In Firebase „Anonyme Anmeldung“ aktivieren.`);
+    setMode("Lokal (Fallback)","#fff7e6");
+  }
+</script>
+
+
+</body>
+</html>
+
+
