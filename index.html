@@ -140,13 +140,7 @@
   const elEmpty    = document.getElementById("empty");
   const copyLinkBtn= document.getElementById("copyLink");
 
-  function refreshUI(){
-  const ok = isValidName(nickname?.value);
-  if(btnFound) btnFound.disabled = !ok;
-  }
-  nickname?.addEventListener('input', refreshUI);
-  window.addEventListener('load', refreshUI);
-
+  
 
   
 
