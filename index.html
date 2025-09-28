@@ -40,7 +40,45 @@
     .share { font-size: 12px; background:#fff; border:1px dashed #ccc; padding:6px 8px; border-radius:8px; }
     .hint { font-size: 12px; color:#555; }
     @media (max-width: 900px) { .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; } aside { grid-row: 3; border-left: none; border-top: 1px solid #e5e5e5; } }
-  </style>
+
+
+
+    /* Mobile-UX: große Buttons, volle Breite */
+@media (max-width: 640px) {
+  header .controls { gap: 6px; }
+  .btn-primary-big, .btn-secondary, #btnExport, #copyLink, .toggle, .input {
+    width: 100%;
+  }
+  .btn-primary-big { font-size: 18px; padding: 14px 16px; }
+}
+
+/* Snackbar für Undo */
+.snackbar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 16px; z-index: 2000;
+  background: #222; color: #fff; border-radius: 10px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+.snackbar button {
+  background: #fff; color: #222; border: none; border-radius: 8px; padding: 8px 10px;
+  font-weight: 600; cursor: pointer;
+}
+
+
+/* Snackbar für Undo */
+.snackbar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 16px; z-index: 2000;
+  background: #222; color: #fff; border-radius: 10px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+.snackbar button {
+  background: #fff; color: #222; border: none; border-radius: 8px; padding: 8px 10px;
+  font-weight: 600; cursor: pointer;
+}
+
+     
+</style>
 </head>
 <body>
   <div class="app">
@@ -76,11 +114,11 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
   import {
-    getFirestore, collection, addDoc, onSnapshot, query, where, orderBy,
+    getFirestore, collection, addDoc, onSnapshot, query, orderBy,
     serverTimestamp, doc, deleteDoc
   } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
-  // --- deine Config ---
+  // --- Deine Firebase-Config ---
   const firebaseConfig = {
     apiKey: "AIzaSyBkYMB1XMSTkEkyxTdlZ0BUBgYnIzIVUww",
     authDomain: "jonkler-auto-tracker.firebaseapp.com",
@@ -90,20 +128,62 @@
     appId: "1:960051126165:web:4fc02c0326395e6b75609c",
   };
 
-  // ------- Helper: UI/Map Objekte aus deiner Seite holen -------
-  const modeBadge = document.getElementById("mode");
-  const btnFound = document.getElementById("btnFound");
-  const btnNew = document.getElementById("btnNew");
-  const btnExport = document.getElementById("btnExport");
-  const chkAuto = document.getElementById("autoMove");
-  const nickname = document.getElementById("nickname");
-  const elSightings = document.getElementById("sightings");
-  const elEmpty = document.getElementById("empty");
-  const roomInfo = document.getElementById("roomInfo");
-  const copyLinkBtn = document.getElementById("copyLink");
+ 
 
-  // Geometrie & Map-Funktionen (identisch zu deiner Version)
-  const CENTER = { lat: 48.727, lng: 9.147 }, RADIUS_M = 1100;
+  const modeBadge  = document.getElementById("mode");
+  const btnFound   = document.getElementById("btnFound");
+  const btnNew     = document.getElementById("btnNew");
+  const btnExport  = document.getElementById("btnExport");
+  const chkAuto    = document.getElementById("autoMove");
+  const nickname   = document.getElementById("nickname");
+  const elSight    = document.getElementById("sightings");
+  const elEmpty    = document.getElementById("empty");
+  const copyLinkBtn= document.getElementById("copyLink");
+
+  function refreshUI(){
+  const ok = isValidName(nickname?.value);
+  if(btnFound) btnFound.disabled = !ok;
+  }
+  nickname?.addEventListener('input', refreshUI);
+  window.addEventListener('load', refreshUI);
+
+
+  // === Name-Pflicht (falls du Patch 2 schon hast)
+  function isValidName(v){ return (v ?? "").trim().length >= 2; }
+
+// === Snackbar-Helfer für Undo
+function showUndo(message, onUndo, timeoutMs = 6000) {
+  const bar = document.createElement('div');
+  bar.className = 'snackbar';
+  const text = document.createElement('span'); text.textContent = message;
+  const btn = document.createElement('button'); btn.textContent = 'Rückgängig';
+  let done = false, t;
+  btn.onclick = ()=>{ if(done) return; done = true; clearTimeout(t); onUndo?.(); document.body.removeChild(bar); };
+  bar.appendChild(text); bar.appendChild(btn);
+  document.body.appendChild(bar);
+  t = setTimeout(()=>{ if(done) return; done = true; document.body.removeChild(bar); }, timeoutMs);
+}
+
+
+
+  function isValidName(v){ return (v ?? "").trim().length >= 2; }
+  function refreshUI(){
+  const ok = isValidName(nickname?.value);
+  btnFound.disabled = !ok;
+  }
+  nickname?.addEventListener('input', refreshUI);
+  window.addEventListener('load', refreshUI);
+
+
+  // ------- Geometrie / Einstellungen -------
+  const CENTER   = { lat: 48.727, lng: 9.147 };
+  const RADIUS_M = 3000; // ↑ hier größer stellen (z.B. 3000), wenn du den Umkreis erweitern willst
+
+  // Aktuelles Auto als Bild?
+  const USE_CUSTOM_ICON = true;        // ← auf true setzen, wenn Bild-Icon gewünscht
+  const AUTO_IMAGE_URL  = "jungler.png"; // ← Pfad zu deiner Bilddatei (PNG/SVG/JPG)
+
+  // ------- Helpers -------
   function metersPerDeg(lat){ return { lat:111320, lng:Math.cos(lat*Math.PI/180)*111320 }; }
   function randomPointInCircle(center, radiusM){
     const u=Math.random(), v=Math.random(), r=radiusM*Math.sqrt(u), t=2*Math.PI*v;
@@ -116,107 +196,166 @@
   }
   const fmt = ts => new Date(ts).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"});
   const to6 = n => Number(n).toFixed(6);
+  function setMode(txt, bg="#e6ffed"){
+    if(!modeBadge) return;
+    modeBadge.textContent = `Modus: ${txt}`;
+    modeBadge.style.background = bg;
+  }
 
-  // Map aus deiner Seite wiederherstellen
+  // ------- Karte -------
   const map = L.map("map").setView([CENTER.lat, CENTER.lng], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
   L.circle([CENTER.lat, CENTER.lng], { radius:RADIUS_M, fill:false, color:"#888", weight:1, dashArray:"4 6" }).addTo(map);
-  const pulseIcon = L.divIcon({ className: "pulse", iconSize: [14,14] });
+
+  // Icon: Puls (Standard) oder Bild (Jonkler-Auto)
+  const pulseIcon = L.divIcon({ className: "pulse", iconSize:[14,14] });
+  const carImageIcon = L.icon({
+    iconUrl: AUTO_IMAGE_URL,
+    iconSize: [40, 40],       // ggf. anpassen je nach Bild
+    iconAnchor: [20, 20],     // Punkt, der auf der Position „sitzt“
+    popupAnchor: [0, -18]
+  });
+
+  // Roter Pin für Funde
   const redPin = L.icon({
     iconUrl:'data:image/svg+xml;utf8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><path d="M14 41C14 41 2 26.8 2 17A12 12 0 1 1 26 17C26 26.8 14 41 14 41Z" fill="#e53935"/><circle cx="14" cy="14" r="5.5" fill="#fff"/></svg>`),
     iconSize:[28,42], iconAnchor:[14,41], popupAnchor:[0,-36]
   });
-  let current=null, currentMarker=null;
+
+  let current = null, currentMarker = null;
+  const layer = L.layerGroup().addTo(map);
+
   function placeNewLocation(){
     current = { ...randomPointInCircle(CENTER, RADIUS_M), ts: Date.now() };
-    if(currentMarker) currentMarker.setLatLng([current.lat, current.lng]);
-    else currentMarker = L.marker([current.lat, current.lng], { icon: pulseIcon }).addTo(map);
-    currentMarker.bindPopup(`<b>Aktueller Jonkler-Standort</b><br>${fmt(current.ts)}<br>Lat ${to6(current.lat)} • Lng ${to6(current.lng)}`);
+    if(currentMarker){
+      currentMarker.setLatLng([current.lat, current.lng]);
+    } else {
+      currentMarker = L.marker(
+        [current.lat, current.lng],
+        { icon: USE_CUSTOM_ICON ? carImageIcon : pulseIcon }
+      ).addTo(map);
+    }
+    currentMarker.bindPopup(
+      `<b>Aktueller Jonkler-Standort</b><br>${fmt(current.ts)}<br>Lat ${to6(current.lat)} • Lng ${to6(current.lng)}`
+    );
     map.panTo([current.lat, current.lng], { animate:true });
   }
   placeNewLocation();
-  const layer = L.layerGroup().addTo(map);
+
+  // ------- Room / Share -------
   const params = new URLSearchParams(location.search);
   const ROOM = (params.get("room") || "moehringen").toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,30) || "moehringen";
   const shareUrl = `${location.origin}${location.pathname}?room=${encodeURIComponent(ROOM)}`;
-  document.getElementById("copyLink").onclick = async ()=>{ await navigator.clipboard.writeText(shareUrl); };
+  if(copyLinkBtn){
+    copyLinkBtn.onclick = async ()=>{ await navigator.clipboard.writeText(shareUrl); copyLinkBtn.textContent="Kopiert!"; setTimeout(()=>copyLinkBtn.textContent="Room-Link kopieren",1200); };
+  }
 
-  // --------- Cloud + klarer Fehlerhinweis ----------
-  const app = initializeApp(firebaseConfig);
+  // ------- Firebase Init -------
+  const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  const db   = getFirestore(app);
 
-  // Badge vorab
-  function setMode(txt, bg="#e6ffed"){ modeBadge.textContent = `Modus: ${txt}`; modeBadge.style.background = bg; }
   setMode("Init …","#eef");
 
-  // Live-Listener
-// Live-Listener (ohne where → kein Composite-Index nötig)
-function startListener(){
-  // Wir lesen nur innerhalb von rooms/{ROOM}/sightings und sortieren nach ts
-  const q = query(
-    collection(db, "rooms", ROOM, "sightings"),
-    orderBy("ts", "desc")
-    // optional: limit(200) importieren und hier ergänzen
-  );
-
-  onSnapshot(q, (snap) => {
-    setMode("Cloud");
-    const list = snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        ...data,
-        // Timestamp robust in ms konvertieren (falls serverTimestamp noch pending ist)
-        ts: data.ts?.toMillis?.() ?? (typeof data.ts === "number" ? data.ts : Date.now())
-      };
-    });
-    render(list);
-  }, (err) => {
-    console.error("Firestore onSnapshot error:", err);
-    alert(
-      `Firestore-Fehler: ${err.code || ""}\n${err.message || ""}\n\n` +
-      "→ Prüfe: Anonymous Auth aktiv, Firestore erstellt, Regeln veröffentlicht, Blocker aus."
+  // ------- Live-Listener (kein where → kein Index nötig) -------
+  function startListener(){
+    const q = query(
+      collection(db, "rooms", ROOM, "sightings"),
+      orderBy("ts", "desc")
     );
-    setMode("Lokal (Fallback)", "#fff7e6");
-  });
-}
+    onSnapshot(q, (snap) => {
+      setMode("Cloud");
+      const rows = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          ts: data.ts?.toMillis?.() ?? (typeof data.ts === "number" ? data.ts : Date.now())
+        };
+      });
+      render(rows);
+    }, (err) => {
+      console.error("Firestore onSnapshot error:", err);
+      alert(
+        `Firestore-Fehler: ${err.code || ""}\n${err.message || ""}\n\n` +
+        "→ Prüfe: Anonymous Auth aktiv, Firestore erstellt, Regeln veröffentlicht, Blocker aus."
+      );
+      setMode("Lokal (Fallback)", "#fff7e6");
+    });
+  }
 
-
-  // Render-Funktion
+  // ------- Render der Funde -------
   function render(rows){
     layer.clearLayers();
-    elSightings.innerHTML = "";
+    elSight.innerHTML = "";
     if(!rows || !rows.length){ elEmpty.style.display="block"; return; }
     elEmpty.style.display="none";
+
     for(const s of rows){
       L.marker([s.lat, s.lng], { icon: redPin })
         .addTo(layer)
         .bindPopup(`<b>Fund</b><br>${fmt(s.ts)}<br>von ${s.user||"Gast"}<br>Lat ${to6(s.lat)} • Lng ${to6(s.lng)}`);
+
       const card = document.createElement("div");
-      card.className="card";
-      card.innerHTML = `<h3>Fund von ${s.user||"Gast"}</h3><div class="meta">${fmt(s.ts)} • Lat ${to6(s.lat)} • Lng ${to6(s.lng)}</div>`;
-      elSightings.appendChild(card);
+      card.className = "card";
+      const who = s.user || "Gast";
+      card.innerHTML = `<h3>Fund von ${who}</h3>
+        <div class="meta">${fmt(s.ts)} • Lat ${to6(s.lat)} • Lng ${to6(s.lng)}</div>`;
+      elSight.appendChild(card);
+
+
+      // Nur der Ersteller darf löschen (passt zu deinen Firestore-Regeln)
+      if (auth.currentUser && s.userId === auth.currentUser.uid) {
+      const del = document.createElement('button');
+      del.textContent = "🗑️ Löschen";
+      del.style.marginTop = "6px";
+      del.onclick = async ()=>{
+      if(!confirm("Diesen Fund löschen?")) return;
+      await deleteDoc(doc(db, "rooms", ROOM, "sightings", s.id));
+  };
+  card.appendChild(del);
+  }
+
     }
   }
 
-  // Schreiben (Fund markieren)
-  async function addCloudSighting(point){
-    const u = auth.currentUser;
-    const name = (document.getElementById("nickname").value.trim() || "Gast");
-    await addDoc(collection(db, "rooms", ROOM, "sightings"), {
-      room: ROOM, lat: point.lat, lng: point.lng, ts: serverTimestamp(), user: name, userId: u?u.uid:null
-    });
-  }
 
-  // Events
-  btnNew.onclick = placeNewLocation;
-  btnFound.onclick = async ()=>{
-    const p = { lat: current.lat, lng: current.lng };
-    if(distanceMeters(p, CENTER) > RADIUS_M) return alert("Außerhalb des Möhringen-Gebiets.");
-    try { await addCloudSighting(p); }
-    catch(e){ console.error("Write error:", e); alert(`Schreib-Fehler: ${e.code || ""}\n${e.message || ""}`); }
-  };
+
+  // Speichern in Firestore + Undo anbieten
+async function addCloudSighting(point){
+  const u = auth.currentUser;
+  const name = nickname?.value?.trim();
+  if(!isValidName(name)){ alert("Bitte zuerst einen Namen eingeben."); return; }
+
+  const ref = await addDoc(collection(db, "rooms", ROOM, "sightings"), {
+    room: ROOM,
+    lat: point.lat,
+    lng: point.lng,
+    ts: serverTimestamp(),
+    user: name,
+    userId: u ? u.uid : null
+  });
+
+  // „Rückgängig“: löscht den gerade erstellten Fund
+  showUndo("Fund gespeichert", async ()=>{
+    try { await deleteDoc(doc(db, "rooms", ROOM, "sightings", ref.id)); }
+    catch(e){ console.error("Undo/Löschen fehlgeschlagen:", e); }
+  });
+}
+
+
+  // ------- Events -------
+  if(btnNew){
+    btnNew.onclick = placeNewLocation;
+  }
+  if(btnFound){
+    btnFound.onclick = async ()=>{
+      const p = { lat: current.lat, lng: current.lng };
+      if(distanceMeters(p, CENTER) > RADIUS_M) return alert("Außerhalb des Möhringen-Gebiets.");
+      try { await addCloudSighting(p); }
+      catch(e){ console.error("Write error:", e); alert(`Schreib-Fehler: ${e.code || ""}\n${e.message || ""}`); }
+    };
+  }
   map.on("click", async ev=>{
     const p = { lat: ev.latlng.lat, lng: ev.latlng.lng };
     if(distanceMeters(p, CENTER) > RADIUS_M) return alert("Außerhalb des Möhringen-Gebiets.");
@@ -224,7 +363,16 @@ function startListener(){
     catch(e){ console.error("Write error:", e); alert(`Schreib-Fehler: ${e.code || ""}\n${e.message || ""}`); }
   });
 
-  // Auth + Listener starten
+  if(btnExport){
+    btnExport.onclick = ()=>{
+      // Export basiert auf aktuell gerenderten Cards → sammle Marker erneut
+      // (Für große Datenmengen besser: rows im State halten.)
+      const rows = Array.from(elSight.querySelectorAll(".card .meta")).map(m => m.textContent);
+      alert("CSV-Export ist in der älteren Version implementiert. Wenn du willst, baue ich ihn hier wieder voll ein.");
+    };
+  }
+
+  // ------- Auth + Listener starten -------
   try {
     await signInAnonymously(auth);  // erfordert: Auth → Anonyme Anmeldung aktiviert
     onAuthStateChanged(auth, ()=> startListener());
@@ -233,7 +381,26 @@ function startListener(){
     alert(`Auth-Fehler: ${e.code || ""}\n${e.message || ""}\n\n→ In Firebase „Anonyme Anmeldung“ aktivieren.`);
     setMode("Lokal (Fallback)","#fff7e6");
   }
+
+  // ------- Auto-Move (optional) -------
+  let autoTimer=null;
+  function setAutoMove(on){
+    if(autoTimer){ clearInterval(autoTimer); autoTimer=null; }
+    if(on){
+      autoTimer=setInterval(()=>{
+        const step = randomPointInCircle({ lat: current.lat, lng: current.lng }, 120);
+        current = (distanceMeters(step, CENTER)<=RADIUS_M)
+          ? { ...step, ts: Date.now() }
+          : { ...randomPointInCircle(CENTER, RADIUS_M), ts: Date.now() };
+        if(currentMarker) currentMarker.setLatLng([current.lat, current.lng]);
+      }, 6000);
+    }
+  }
+  if(chkAuto){
+    chkAuto.onchange = e => setAutoMove(e.target.checked);
+  }
 </script>
+
 
 
 </body>
